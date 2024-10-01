@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>إدارة تأجير السيارات</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js"></script>
+    <style>
+      body {
+          font-family: Arial, sans-serif;
+          background-color: #f0f2f5;
+          direction: rtl;
+          text-align: right;
+      }
+      .container {
+          background-color: white;
+          padding: 20px;
+          border-radius: 8px;
+          box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+          width: 600px;
+          margin: auto;
+          margin-top: 30px;
+      }
+      h2 {
+          text-align: center;
+      }
+      table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-bottom: 20px;
+      }
+      th, td {
+          padding: 10px;
+          border: 1px solid #ddd;
+          text-align: center;
+      }
+      th {
+          background-color: #f7f7f7;
+      }
+      input[type="text"], input[type="number"], input[type="date"] {
+          width: calc(100% - 20px);
+          padding: 8px;
+          margin-bottom: 10px;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+      }
+      button {
+            padding: 10px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #218838;
+        }
+      .total-price {
+          font-weight: bold;
+          font-size: 18px;
+          text-align: right;
+          margin-top: 20px;
+      }
+      .delete-btn {
+          background-color: #dc3545;
+          color: white;
+          border: none;
+          padding: 5px;
+          border-radius: 4px;
+          cursor: pointer;
+        }
+        .delete-btn:hover {
+          background-color: #c82333;
+      }
+      #downloadPdfBtn {
+        background-color: #007bff;
+        margin-right: 10px;
+      }
+      
+      #downloadPdfBtn:hover {
+        background-color: #0056b3;
+      }
+  </style>
+
+
+
+</head>
+<body>
+  <button onclick="window.location.href='price.html'">العودة إلى صفحة المعملات</button>
+    <div class="container" id="rentalManagement">
+        <button id="downloadPdfBtn">تحميل PDF</button>
+        <h2>إدارة تأجير السيارات</h2>
+        <form id="rentalForm">
+            <input type="text" id="carName"  placeholder="اسم السيارة">
+            <input type="text" id="clientName"  placeholder="اسم المستأجر">
+            <input type="number" id="pricePerDay" required placeholder="السعر اليومي بالدرهم">
+            <input type="number" id="rentalDays" required placeholder="عدد الأيام">
+            <button type="submit">إضافة</button>
+        </form>
+
+        <table id="rentalTable">
+            <thead>
+                <tr>
+                    <th>اسم السيارة</th>
+                    <th>اسم المستأجر</th>
+                    <th>السعر اليومي</th>
+                    <th>عدد الأيام</th>
+                    <th>الإجمالي</th>
+                    <th>الإجراءات</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
+        <div class="total-price">المجموع الإجمالي: <span id="total">0</span> درهم</div>
+
+
+    </div>
+
+    <script>
+        let db;
+        const totalDisplay = document.getElementById('total');
+        const tbody = document.querySelector('#rentalTable tbody');
+
+        // Initialize IndexedDB
+        const request = indexedDB.open('rentalDB', 1);
+        request.onupgradeneeded = function(event) {
+            db = event.target.result;
+            const store = db.createObjectStore('rentals', { keyPath: 'id', autoIncrement: true });
+        };
+
+        request.onsuccess = function(event) {
+            db = event.target.result;
+            loadRentals();
+        };
+
+        request.onerror = function(event) {
+            console.error('Database error:', event.target.errorCode);
+        };
+
+        // Load rentals from IndexedDB
+        function loadRentals() {
+            const transaction = db.transaction(['rentals'], 'readonly');
+            const store = transaction.objectStore('rentals');
+            const request = store.getAll();
+
+            request.onsuccess = function(event) {
+                const rentals = event.target.result;
+                rentals.forEach(rental => addRowToTable(rental));
+                updateTotal();
+            };
+        }
+
+        // Add a row to the table
+        function addRowToTable(data) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${data.carName}</td>
+                <td>${data.clientName}</td>
+                <td dir='ltr' >${data.pricePerDay} (DH)</td>
+                <td>${data.rentalDays}</td>
+                <td dir='ltr'>${data.totalPrice} (DH)</td>
+                <td><button class="delete-btn" onclick="deleteRow(${data.id})">حذف</button></td>
+            `;
+            tbody.appendChild(tr);
+        }
+
+        // Handle form submission
+        document.getElementById('rentalForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+
+            const carName = document.getElementById('carName').value;
+            const clientName = document.getElementById('clientName').value;
+            const pricePerDay = parseFloat(document.getElementById('pricePerDay').value);
+            const rentalDays = parseInt(document.getElementById('rentalDays').value);
+            const totalPrice = pricePerDay * rentalDays;
+
+            const data = { carName, clientName, pricePerDay, rentalDays, totalPrice };
+
+            const transaction = db.transaction(['rentals'], 'readwrite');
+            const store = transaction.objectStore('rentals');
+            const request = store.add(data);
+
+            request.onsuccess = function() {
+                addRowToTable({ ...data, id: request.result });
+                updateTotal();
+            };
+
+            // Reset form
+            document.getElementById('rentalForm').reset();
+        });
+
+        // Delete a row and update the total
+        function deleteRow(id) {
+            const transaction = db.transaction(['rentals'], 'readwrite');
+            const store = transaction.objectStore('rentals');
+            store.delete(id);
+
+            transaction.oncomplete = function() {
+                tbody.innerHTML = '';
+                loadRentals();
+            };
+        }
+
+        // Update the total price
+        function updateTotal() {
+            let total = 0;
+            const transaction = db.transaction(['rentals'], 'readonly');
+            const store = transaction.objectStore('rentals');
+            const request = store.getAll();
+
+            request.onsuccess = function(event) {
+                const rentals = event.target.result;
+                rentals.forEach(rental => total += rental.totalPrice);
+                totalDisplay.textContent = total.toFixed(2);
+            };
+        }
+
+        // Download table as PDF
+    // Include this function to get the current date in the format YYYY-MM-DD
+    function getCurrentDate() {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0'); // Month is 0-indexed
+        const day = String(today.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    // PDF Download
+    document.getElementById('downloadPdfBtn').addEventListener('click', function() {
+        const element = document.createElement('div');  // Temporary div to hold the PDF content
+        const tableHtml = document.getElementById('rentalTable').outerHTML;
+        const totalHtml = document.querySelector('.total-price').outerHTML;
+
+        element.innerHTML = tableHtml + totalHtml; // Add table and total to the temporary div
+
+        const pageName = 'إدارة تأجير السيارات';
+        const currentDate = getCurrentDate();
+        const opt = {
+            margin:       1,
+            filename:     `${pageName}_${currentDate}.pdf`, // Custom filename with page name and date
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2 },
+            jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+        };
+
+        html2pdf().from(element).set(opt).save();
+    });
+
+
+    </script>
+</body>
+</html>
